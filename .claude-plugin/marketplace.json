@@ -1,0 +1,5 @@
+{
+  "name": "context-hud",
+  "owner": { "name": "locomainnn" },
+  "plugins": [{ "name": "context-hud", "source": "./" }]
+}
