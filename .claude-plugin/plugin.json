@@ -1,1 +1,1 @@
-{ "name": "context-hud", "version": "0.2.0", "description": "A HUD bar above the prompt in the Claude desktop app: model, project/git, context usage, rate limits, tools, agents and todos", "license": "MIT", "types": "./types/index.d.ts" }
+{ "name": "context-hud", "version": "0.1.0", "description": "A HUD bar above the prompt in the Claude desktop app: model, project/git, context usage, rate limits, tools, agents and todos", "license": "MIT", "types": "./types/index.d.ts" }
