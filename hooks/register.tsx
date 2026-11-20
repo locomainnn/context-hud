@@ -108,7 +108,10 @@ export const register: Register = on => {
       return nowHidden
     })
     void refreshAll($)
-    return { text: nowHidden ? 'HUD verborgen.' : 'HUD zichtbaar boven de chatbalk.' }
+    const surfaces = await $.session.surfaces()
+    const where = surfaces.join(', ') || 'geen'
+    const note = surfaces.includes('desktop') ? '' : ' (geen desktop-surface: de balk tekent alleen in de desktop app)'
+    return { text: `${nowHidden ? 'HUD verborgen.' : 'HUD aan.'} Surfaces: ${where}${note}` }
   })
 
   on('turn.start', async ($, e, next) => {
