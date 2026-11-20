@@ -9,7 +9,7 @@ const modelAtom = atom({ plugin: 'context-hud', key: 'model' } as const, '', { s
 const projectAtom = atom({ plugin: 'context-hud', key: 'project' } as const, null, { shape: 'project-1' })
 const toolsAtom = atom({ plugin: 'context-hud', key: 'tools' } as const, [], { shape: 'tools-1' })
 const agentsAtom = atom({ plugin: 'context-hud', key: 'agents' } as const, [], { shape: 'agents-1' })
-const hiddenAtom = atom({ plugin: 'context-hud', key: 'hidden' } as const, false, { shape: 'hidden-1' })
+const hiddenAtom = atom({ plugin: 'context-hud', key: 'hidden' } as const, false, { shape: 'hidden-2' })
 const todosAtom = atom({ plugin: 'context-hud', key: 'todos' } as const, [], { shape: 'todos-1' })
 
 
@@ -94,24 +94,66 @@ async function refreshAll($: any) {
   await Promise.allSettled([refreshUsage($), refreshAgents($)])
 }
 
+
+async function hudLines($: any): Promise<string[]> {
+  const [usage, model, project, tools, agents, todos] = await Promise.all([
+    read($, usageAtom),
+    read($, modelAtom),
+    read($, projectAtom),
+    read($, toolsAtom),
+    read($, agentsAtom),
+    read($, todosAtom),
+  ])
+  const now = await $.clock.now()
+  const parts: string[] = [`[${model ? model.replace(/^claude-/, '') : '…'}]`]
+  if (project) {
+    parts.push(
+      shortPath(project.cwd, 1) + (project.branch ? ` git:(${project.branch}${project.isDirty ? '*' : ''})` : ''),
+    )
+  }
+  if (usage) {
+    const pct = usage.percent ?? 0
+    const dot = pct >= 85 ? '🔴' : pct >= 70 ? '🟡' : '🟢'
+    parts.push(`${dot} ${bar(pct, 10)} ${usage.percent ?? '—'}% (${fmtTokens(usage.tokens)}/${fmtTokens(usage.window)})`)
+    for (const l of usage.limits) {
+      parts.push(`${limitLabel(l.kind)} ${l.percentUsed}%${fmtReset(l.resetsAt, now).replace(' · reset', ' ↻')}`)
+    }
+    parts.push(`⏱ ${fmtDuration(now - usage.startedAt)}`)
+  }
+  const lines = [parts.join(' │ ')]
+
+  const counts = new Map<string, number>()
+  for (const t of tools) if (t.isDone) counts.set(t.tool, (counts.get(t.tool) ?? 0) + 1)
+  const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6)
+  if (top.length > 0) lines.push(top.map(([n, c]) => `✓ ${n} ×${c}`).join('  '))
+
+  for (const a of agents.filter(a => a.status === 'running' || a.status === 'pending' || a.status === 'waiting')) {
+    lines.push(`◐ ${a.type}: ${a.description} (${fmtDuration(now - a.startTime)})`)
+  }
+  const done = todos.filter(t => t.status === 'completed').length
+  if (todos.length > 0 && done < todos.length) {
+    const active = todos.find(t => t.status === 'in_progress')
+    lines.push(`▸ ${active ? active.activeForm : "Todo's"} (${done}/${todos.length})`)
+  }
+  return lines
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    await $.command.register({ name: 'hud', description: 'Toggle the HUD bar above the prompt' })
+    await $.command.register({ name: 'hud', description: 'Show the HUD now (/hud aan|uit toggles the line after each answer)' })
     void Promise.allSettled([refreshAll($), refreshProject($)])
     return next(e)
   })
 
-  on('command.run', { command: 'hud' }, async $ => {
-    let nowHidden = false
-    await update($, hiddenAtom, h => {
-      nowHidden = !h
-      return nowHidden
-    })
-    void refreshAll($)
-    const surfaces = await $.session.surfaces()
-    const where = surfaces.join(', ') || 'geen'
-    const note = surfaces.includes('desktop') ? '' : ' (geen desktop-surface: de balk tekent alleen in de desktop app)'
-    return { text: `${nowHidden ? 'HUD verborgen.' : 'HUD aan.'} Surfaces: ${where}${note}` }
+  on('command.run', { command: 'hud' }, async ($, e) => {
+    const arg = e.args.trim().toLowerCase()
+    if (arg === 'uit' || arg === 'off') {
+      await update($, hiddenAtom, () => true)
+      return { text: 'HUD-regel na elk antwoord staat uit. `/hud aan` zet hem terug.' }
+    }
+    if (arg === 'aan' || arg === 'on') await update($, hiddenAtom, () => false)
+    await Promise.allSettled([refreshAll($), refreshProject($)])
+    return { text: (await hudLines($)).join('\n') }
   })
 
   on('turn.start', async ($, e, next) => {
@@ -123,7 +165,14 @@ export const register: Register = on => {
   on('turn.complete', async ($, e, next) => {
     const out = await next(e)
     if (e.usage?.model) void update($, modelAtom, () => e.usage!.model)
-    void Promise.allSettled([refreshAll($), refreshProject($)])
+    void (async () => {
+      await Promise.allSettled([refreshAll($), refreshProject($)])
+      if (await read($, hiddenAtom)) return
+      const surfaces = await $.session.surfaces()
+      if (surfaces.includes('desktop')) return
+      const text = (await hudLines($)).join('\n')
+      await $.session.append({ message: { type: 'system', content: [{ type: 'text', text }] } })
+    })()
     return out
   })
 

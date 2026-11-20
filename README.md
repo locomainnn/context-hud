@@ -12,7 +12,7 @@ What the bar shows:
 - **Agents**: running subagents with type, model and elapsed time
 - **Todos**: the active todo and progress (done/total)
 
-`/hud` toggles the bar on and off.
+`/hud` prints the HUD as text. Where no desktop surface draws the bar (for example a server session opened in the desktop app through Remote Control), a one-line HUD notice is added under each answer instead; `/hud uit` turns that off and `/hud aan` back on.
 
 ## Install
 
